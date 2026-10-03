@@ -50,6 +50,22 @@ function reachableDevBaseUrl(configured: string) {
 /** Contract base URL comes from EXPO_PUBLIC_API_BASE_URL. Dev may fall back to localhost. */
 export const API_BASE_URL = reachableDevBaseUrl(requireApiBaseUrl());
 
+/** Same host as the HTTP API, with the access JWT the REST client already stores. */
+export function cartSocketUrl(accessToken: string) {
+  const wsBase = API_BASE_URL.replace(/^http/i, "ws").replace(/\/$/, "");
+  const url = new URL("/ws/cart/", `${wsBase}/`);
+  url.searchParams.set("token", accessToken);
+  return url.toString();
+}
+
+/** Same host and access JWT as the cart socket. */
+export function savedSocketUrl(accessToken: string) {
+  const wsBase = API_BASE_URL.replace(/^http/i, "ws").replace(/\/$/, "");
+  const url = new URL("/ws/saved/", `${wsBase}/`);
+  url.searchParams.set("token", accessToken);
+  return url.toString();
+}
+
 const NGROK_HOST_SUFFIXES = [".ngrok-free.app", ".ngrok-free.dev", ".ngrok.io", ".ngrok.app", ".ngrok.dev"];
 
 function isNgrokHost(hostname: string) {
