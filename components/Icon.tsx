@@ -1,4 +1,4 @@
-import { Text, type StyleProp, type TextStyle } from "react-native";
+import { Text, View, type StyleProp, type TextStyle } from "react-native";
 
 const GLYPHS = {
   add: 57669,
@@ -84,22 +84,23 @@ export function Icon({ name, size = 24, color, filled = false, style }: Props) {
 export function Stars({ rating, size = 15 }: { rating: number; size?: number }) {
   const full = Math.floor(rating);
   const half = rating - full > 0;
-  const icons: Array<"star" | "star_half" | "empty"> = [];
+  const icons: ("star" | "star_half" | "empty")[] = [];
   for (let i = 0; i < full && icons.length < 5; i += 1) icons.push("star");
   if (half && icons.length < 5) icons.push("star_half");
   while (icons.length < 5) icons.push("empty");
 
   return (
-    <>
+    <View style={{ flexDirection: "row", alignItems: "center", flexShrink: 0 }}>
       {icons.map((kind, index) => (
-        <Icon
-          key={`${kind}-${index}`}
-          name={kind === "empty" ? "star" : kind}
-          size={size}
-          color={kind === "empty" ? "#E7DFD3" : "#C85A32"}
-          filled={kind !== "empty"}
-        />
+        <View key={`${kind}-${index}`} style={{ width: size, height: size }}>
+          <Icon
+            name={kind === "empty" ? "star" : kind}
+            size={size}
+            color={kind === "empty" ? "#E7DFD3" : "#C85A32"}
+            filled={kind !== "empty"}
+          />
+        </View>
       ))}
-    </>
+    </View>
   );
 }
