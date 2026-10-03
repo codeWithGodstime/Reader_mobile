@@ -1,5 +1,5 @@
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -15,12 +15,17 @@ import { MaterialSymbols_400Regular } from "@expo-google-fonts/material-symbols/
 
 import { Icon } from "@/components/Icon";
 import { colors, radius, type } from "@/constants/theme";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ShopProvider, useShop } from "@/context/ShopContext";
 
 export { ErrorBoundary } from "expo-router";
 
+export const unstable_settings = {
+  initialRouteName: "splash",
+};
+
 SplashScreen.preventAutoHideAsync();
+SplashScreen.setOptions({ duration: 400, fade: true });
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -46,16 +51,35 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <ShopProvider>
-          <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.paperBase } }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="book/[id]" />
-            <Stack.Screen name="sign-in" options={{ presentation: "modal" }} />
-          </Stack>
-          <ToastHost />
+          <RootNavigator />
         </ShopProvider>
       </AuthProvider>
     </SafeAreaProvider>
+  );
+}
+
+function RootNavigator() {
+  const { user, ready } = useAuth();
+  const pathname = usePathname();
+
+  return (
+    <>
+      <StatusBar style={pathname === "/splash" ? "light" : "dark"} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.paperBase } }}>
+        <Stack.Screen
+          name="splash"
+          options={{ animation: "fade", gestureEnabled: false, contentStyle: { backgroundColor: colors.forest } }}
+        />
+        <Stack.Protected guard={ready && !!user}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="book/[id]" />
+        </Stack.Protected>
+        <Stack.Protected guard={ready && !user}>
+          <Stack.Screen name="sign-in" options={{ animation: "fade", gestureEnabled: false }} />
+        </Stack.Protected>
+      </Stack>
+      <ToastHost />
+    </>
   );
 }
 
