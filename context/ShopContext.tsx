@@ -2,10 +2,11 @@ import { router } from "expo-router";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useAuth } from "@/context/AuthContext";
-import { ApiError, readerApi, type Cart, type FormatCode } from "@/lib/api";
+import { ApiError, readerApi, type BookSummary, type Cart, type FormatCode } from "@/lib/api";
 
 type ShopContextValue = {
   cart: Cart | null;
+  cartLoaded: boolean;
   itemCount: number;
   toast: string | null;
   showToast: (message: string) => void;
@@ -16,7 +17,12 @@ type ShopContextValue = {
   applyVoucher: (code: string) => Promise<void>;
   clearVoucher: () => Promise<void>;
   replaceCart: (cart: Cart) => void;
-  toggleSaved: (bookId: string, saved: boolean) => Promise<boolean>;
+  savedBooks: BookSummary[];
+  savedStatus: "loading" | "ready" | "error";
+  savedError: string;
+  refreshSaved: () => Promise<void>;
+  isSaved: (bookId: string, fallback?: boolean) => boolean;
+  toggleSaved: (book: BookSummary) => Promise<boolean>;
 };
 
 const ShopContext = createContext<ShopContextValue | null>(null);
@@ -24,8 +30,22 @@ const ShopContext = createContext<ShopContextValue | null>(null);
 export function ShopProvider({ children }: { children: ReactNode }) {
   const { user, ready } = useAuth();
   const [cart, setCart] = useState<Cart | null>(null);
+  const [settledUserId, setSettledUserId] = useState<string | null | undefined>(undefined);
+  const cartLoaded = ready && settledUserId === (user?.id ?? null);
   const [toast, setToast] = useState<string | null>(null);
+  const [savedBooks, setSavedBooks] = useState<BookSummary[]>([]);
+  const [savedKnown, setSavedKnown] = useState<Record<string, boolean>>({});
+  const [shelfLoaded, setShelfLoaded] = useState(false);
+  const [savedStatus, setSavedStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [savedError, setSavedError] = useState("");
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedBooksRef = useRef<BookSummary[]>([]);
+  const savedKnownRef = useRef<Record<string, boolean>>({});
+  const shelfLoadedRef = useRef(false);
+  const pendingSavedRef = useRef(new Map<string, boolean>());
+  const toggleTokenRef = useRef(new Map<string, number>());
+  const savedRequestRef = useRef(0);
+  const shelfOwnerRef = useRef<string | null | undefined>(undefined);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -43,8 +63,23 @@ export function ShopProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!ready) return;
-    refreshCart().catch(() => setCart(null));
-  }, [ready, refreshCart]);
+    let active = true;
+    const ownerId = user?.id ?? null;
+    const request = user ? readerApi.cart() : Promise.resolve(null);
+    request
+      .then((next) => {
+        if (active) setCart(next);
+      })
+      .catch(() => {
+        if (active) setCart(null);
+      })
+      .finally(() => {
+        if (active) setSettledUserId(ownerId);
+      });
+    return () => {
+      active = false;
+    };
+  }, [ready, user]);
 
   const requireUser = useCallback(() => {
     if (user) return true;
@@ -99,20 +134,164 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     setCart(await readerApi.removeVoucher());
   }, []);
 
-  const toggleSaved = useCallback(
-    async (bookId: string, saved: boolean) => {
-      if (!requireUser()) return saved;
-      if (saved) await readerApi.unsaveBook(bookId);
-      else await readerApi.saveBook(bookId);
-      showToast(saved ? "Removed from your shelf" : "Saved to your shelf");
-      return !saved;
+  const writeSaved = useCallback((books: BookSummary[], known: Record<string, boolean>, loaded = shelfLoadedRef.current) => {
+    savedBooksRef.current = books;
+    savedKnownRef.current = known;
+    shelfLoadedRef.current = loaded;
+    setSavedBooks(books);
+    setSavedKnown(known);
+    setShelfLoaded(loaded);
+  }, []);
+
+  const readSaved = useCallback((bookId: string, fallback = false) => {
+    const known = savedKnownRef.current[bookId];
+    if (known !== undefined) return known;
+    if (shelfLoadedRef.current) return false;
+    return fallback;
+  }, []);
+
+  const applyServerShelf = useCallback(
+    (serverBooks: BookSummary[]) => {
+      const known = { ...savedKnownRef.current };
+      for (const item of serverBooks) {
+        if (known[item.id] === undefined && !pendingSavedRef.current.has(item.id)) known[item.id] = true;
+      }
+      for (const [id, saved] of pendingSavedRef.current) known[id] = saved;
+
+      const serverIds = new Set(serverBooks.map((item) => item.id));
+      const extras = savedBooksRef.current.filter((item) => known[item.id] === true && !serverIds.has(item.id));
+      const ordered = serverBooks.filter((item) => known[item.id] !== false).map((item) => ({ ...item, saved: true }));
+      writeSaved([...extras, ...ordered], known, true);
+      setSavedError("");
+      setSavedStatus("ready");
     },
-    [requireUser, showToast],
+    [writeSaved],
+  );
+
+  const loadShelfBooks = useCallback(async () => {
+    const shelves = await readerApi.shelves();
+    const shelf = shelves.find((item) => item.is_default) ?? shelves[0];
+    if (!shelf) return [];
+    const detail = await readerApi.shelf(shelf.id);
+    return detail.books.map((item) => ({ ...item, saved: true }));
+  }, []);
+
+  const refreshSaved = useCallback(async () => {
+    if (!user) {
+      pendingSavedRef.current.clear();
+      toggleTokenRef.current.clear();
+      writeSaved([], {}, false);
+      setSavedError("");
+      setSavedStatus("ready");
+      return;
+    }
+
+    const request = ++savedRequestRef.current;
+    if (!shelfLoadedRef.current && savedBooksRef.current.length === 0) setSavedStatus("loading");
+
+    try {
+      const serverBooks = await loadShelfBooks();
+      if (request !== savedRequestRef.current) return;
+      applyServerShelf(serverBooks);
+    } catch (error) {
+      if (request !== savedRequestRef.current) return;
+      if (savedBooksRef.current.length > 0) {
+        setSavedStatus("ready");
+        return;
+      }
+      setSavedError(error instanceof ApiError ? error.message : "Saved titles could not be loaded.");
+      setSavedStatus("error");
+    }
+  }, [user, writeSaved, loadShelfBooks, applyServerShelf]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let active = true;
+    const request = ++savedRequestRef.current;
+    const ownerId = user?.id ?? null;
+    const job = Promise.resolve().then(() => {
+      if (!active) return [] as BookSummary[];
+      if (shelfOwnerRef.current !== ownerId) {
+        shelfOwnerRef.current = ownerId;
+        pendingSavedRef.current.clear();
+        toggleTokenRef.current.clear();
+        writeSaved([], {}, false);
+        setSavedError("");
+        setSavedStatus(ownerId ? "loading" : "ready");
+      }
+      if (!ownerId) return [] as BookSummary[];
+      return loadShelfBooks();
+    });
+    job
+      .then((serverBooks) => {
+        if (!active || request !== savedRequestRef.current || !ownerId) return;
+        applyServerShelf(serverBooks);
+      })
+      .catch((error: unknown) => {
+        if (!active || request !== savedRequestRef.current) return;
+        if (savedBooksRef.current.length > 0) {
+          setSavedStatus("ready");
+          return;
+        }
+        setSavedError(error instanceof ApiError ? error.message : "Saved titles could not be loaded.");
+        setSavedStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [ready, user, loadShelfBooks, applyServerShelf, writeSaved]);
+
+  const isSaved = useCallback(
+    (bookId: string, fallback = false) => {
+      const known = savedKnown[bookId];
+      if (known !== undefined) return known;
+      if (shelfLoaded) return false;
+      return fallback;
+    },
+    [savedKnown, shelfLoaded],
+  );
+
+  const toggleSaved = useCallback(
+    async (book: BookSummary) => {
+      if (!requireUser()) return readSaved(book.id, book.saved);
+      const currently = readSaved(book.id, book.saved);
+      const next = !currently;
+      const token = (toggleTokenRef.current.get(book.id) ?? 0) + 1;
+      toggleTokenRef.current.set(book.id, token);
+      pendingSavedRef.current.set(book.id, next);
+
+      const nextKnown = { ...savedKnownRef.current, [book.id]: next };
+      const nextBooks = next
+        ? [{ ...book, saved: true }, ...savedBooksRef.current.filter((item) => item.id !== book.id)]
+        : savedBooksRef.current.filter((item) => item.id !== book.id);
+      writeSaved(nextBooks, nextKnown);
+
+      try {
+        if (currently) await readerApi.unsaveBook(book.id);
+        else await readerApi.saveBook(book.id);
+        if (toggleTokenRef.current.get(book.id) !== token) return readSaved(book.id, next);
+        pendingSavedRef.current.delete(book.id);
+        showToast(currently ? "Removed from your shelf" : "Saved to your shelf");
+        return next;
+      } catch (error) {
+        if (toggleTokenRef.current.get(book.id) !== token) return readSaved(book.id, currently);
+        pendingSavedRef.current.delete(book.id);
+        const revertedKnown = { ...savedKnownRef.current, [book.id]: currently };
+        const revertedBooks = currently
+          ? [{ ...book, saved: true }, ...savedBooksRef.current.filter((item) => item.id !== book.id)]
+          : savedBooksRef.current.filter((item) => item.id !== book.id);
+        writeSaved(revertedBooks, revertedKnown);
+        showToast(error instanceof ApiError ? error.message : "Could not update your shelf.");
+        return currently;
+      }
+    },
+    [readSaved, requireUser, showToast, writeSaved],
   );
 
   const value = useMemo(
     () => ({
       cart,
+      cartLoaded,
       itemCount: cart?.item_count ?? 0,
       toast,
       showToast,
@@ -123,9 +302,14 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       applyVoucher,
       clearVoucher,
       replaceCart: setCart,
+      savedBooks,
+      savedStatus,
+      savedError,
+      refreshSaved,
+      isSaved,
       toggleSaved,
     }),
-    [cart, toast, showToast, refreshCart, addToCart, setLineQuantity, removeLine, applyVoucher, clearVoucher, toggleSaved],
+    [cart, cartLoaded, toast, showToast, refreshCart, addToCart, setLineQuantity, removeLine, applyVoucher, clearVoucher, savedBooks, savedStatus, savedError, refreshSaved, isSaved, toggleSaved],
   );
 
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;

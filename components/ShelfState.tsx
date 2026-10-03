@@ -29,23 +29,6 @@ export function ShelfState({ icon, title, body, action, onAction, tone = "empty"
   );
 }
 
-export function LoadingShelf() {
-  return (
-    <View style={styles.loading}>
-      {[0, 1, 2].map((item) => (
-        <View key={item} style={styles.skeleton}>
-          <View style={styles.skeletonCover} />
-          <View style={styles.skeletonCopy}>
-            <View style={styles.lineShort} />
-            <View style={styles.line} />
-            <View style={styles.line} />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
@@ -72,23 +55,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
-  loading: { gap: 16 },
-  skeleton: {
-    flexDirection: "row",
-    gap: 16,
-    backgroundColor: colors.paperElevated,
-    borderRadius: radius.xl,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.linen,
-  },
-  skeletonCover: {
-    width: 112,
-    height: 160,
-    borderRadius: radius.md,
-    backgroundColor: colors.paperSurface,
-  },
-  skeletonCopy: { flex: 1, gap: 10, justifyContent: "center" },
-  line: { height: 12, borderRadius: 6, backgroundColor: colors.paperSurface },
-  lineShort: { height: 12, width: "40%", borderRadius: 6, backgroundColor: colors.linen },
 });

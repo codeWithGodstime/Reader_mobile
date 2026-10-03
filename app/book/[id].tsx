@@ -5,14 +5,15 @@ import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-nati
 import { BookCover } from "@/components/BookCover";
 import { Icon, Stars } from "@/components/Icon";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { LoadingShelf, ShelfState } from "@/components/ShelfState";
+import { BookDetailSkeleton } from "@/components/Skeleton";
+import { ShelfState } from "@/components/ShelfState";
 import { colors, radius, space, type } from "@/constants/theme";
 import { useShop } from "@/context/ShopContext";
 import { ApiError, compactCount, dollars, readerApi, type BookDetail, type BookFormat, type BookSummary, type Review } from "@/lib/api";
 
 export default function BookDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { addToCart, toggleSaved, showToast } = useShop();
+  const { addToCart, toggleSaved, isSaved } = useShop();
   const [book, setBook] = useState<BookDetail | null>(null);
   const [related, setRelated] = useState<BookSummary[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -21,7 +22,6 @@ export default function BookDetailScreen() {
   const [edition, setEdition] = useState<BookFormat | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [expanded, setExpanded] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   const load = () => {
     if (!id) return;
@@ -29,7 +29,6 @@ export default function BookDetailScreen() {
     Promise.all([readerApi.book(id), readerApi.related(id), readerApi.reviews(id)])
       .then(([detail, companions, reviewPage]) => {
         setBook(detail);
-        setSaved(detail.saved);
         setEdition(detail.formats.find((item) => item.code === detail.format) ?? detail.formats[0] ?? null);
         setRelated(companions);
         setReviews(reviewPage.results);
@@ -45,6 +44,7 @@ export default function BookDetailScreen() {
     load();
   }, [id]);
 
+  const saved = book ? isSaved(book.id, book.saved) : false;
   const price = edition?.price ?? book?.price ?? "0.00";
   const compare = edition?.compare_at_price ?? book?.compare_at_price;
   const savePercent = compare && Number(compare) > Number(price) ? Math.round((1 - Number(price) / Number(compare)) * 100) : 0;
@@ -56,9 +56,7 @@ export default function BookDetailScreen() {
         title="Book Details"
         onShare={() => book && Share.share({ message: `${book.title} by ${book.author_name} — Reader` })}
       />
-      {status === "loading" ? (
-        <View style={styles.pad}><LoadingShelf /></View>
-      ) : null}
+      {status === "loading" ? <BookDetailSkeleton /> : null}
       {status === "error" ? (
         <ShelfState icon="menu_book" tone="error" title="This title isn’t on the shelf" body={error} action="Back to the shop" onAction={() => router.replace("/")} />
       ) : null}
@@ -76,13 +74,9 @@ export default function BookDetailScreen() {
                 footer={`Print • ${book.pages}pp`}
               />
               <Pressable
-                accessibilityLabel="Save to reading list"
-                onPress={async () => {
-                  try {
-                    setSaved(await toggleSaved(book.id, saved));
-                  } catch (err) {
-                    showToast(err instanceof ApiError ? err.message : "Could not update your shelf.");
-                  }
+                accessibilityLabel={saved ? "Remove from reading list" : "Save to reading list"}
+                onPress={() => {
+                  void toggleSaved({ ...book, saved });
                 }}
                 style={styles.bookmark}>
                 <Icon name={saved ? "bookmark" : "bookmark_border"} size={22} color={colors.forest} filled={saved} />
@@ -212,7 +206,6 @@ function Spec({ icon, label, value }: { icon: "auto_stories" | "domain" | "trans
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paperBase },
-  pad: { padding: space.margin },
   content: { padding: space.margin, paddingBottom: 140, gap: 10 },
   hero: { alignItems: "center", marginBottom: 8 },
   bookmark: { position: "absolute", right: 36, bottom: -8, width: 44, height: 44, borderRadius: 22, backgroundColor: colors.paperElevated, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.linen },

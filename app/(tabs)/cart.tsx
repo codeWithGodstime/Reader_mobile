@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { BookCover } from "@/components/BookCover";
+import { FormScroll } from "@/components/FormScroll";
 import { Icon } from "@/components/Icon";
 import { ScreenHeader } from "@/components/ScreenHeader";
+import { CartSkeleton } from "@/components/Skeleton";
 import { ShelfState } from "@/components/ShelfState";
 import { Field, PaperCard, PillButton } from "@/components/ui";
 import { colors, radius, space, type } from "@/constants/theme";
@@ -16,7 +18,7 @@ type Errors = Partial<Record<"name" | "street" | "city" | "state" | "zip" | "pho
 
 export default function CartScreen() {
   const { user } = useAuth();
-  const { cart, removeLine, applyVoucher, clearVoucher, refreshCart, showToast } = useShop();
+  const { cart, cartLoaded, removeLine, applyVoucher, clearVoucher, refreshCart } = useShop();
   const [speed, setSpeed] = useState<"standard" | "express">("standard");
   const [methods, setMethods] = useState<ShippingMethod[]>([]);
   const [name, setName] = useState("");
@@ -148,6 +150,18 @@ export default function CartScreen() {
     );
   }
 
+  if (!cartLoaded) {
+    return (
+      <View style={styles.screen}>
+        <ScreenHeader variant="stack" title="Checkout Flow" onShare={() => Share.share({ message: "Reader checkout" })} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <Stepper active={1} />
+          <CartSkeleton />
+        </ScrollView>
+      </View>
+    );
+  }
+
   if (confirmed) {
     return (
       <View style={styles.screen}>
@@ -170,7 +184,7 @@ export default function CartScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader variant="stack" title="Checkout Flow" onShare={() => Share.share({ message: "Reader checkout" })} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScroll contentContainerStyle={styles.content}>
         <Stepper active={1} />
         {!cart || cart.items.length === 0 ? (
           <ShelfState
@@ -352,7 +366,7 @@ export default function CartScreen() {
             <Text style={[type.bodySm, styles.legal]}>By placing your order, you agree to Reader’s Terms and Privacy Policy.</Text>
           </>
         )}
-      </ScrollView>
+      </FormScroll>
     </View>
   );
 }

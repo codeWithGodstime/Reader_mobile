@@ -8,22 +8,34 @@ import { useShop } from "@/context/ShopContext";
 import { compactCount, dollars, type BookSummary } from "@/lib/api";
 
 export function BookCard({ book }: { book: BookSummary }) {
-  const { addToCart } = useShop();
+  const { addToCart, toggleSaved, isSaved } = useShop();
+  const saved = isSaved(book.id, book.saved);
 
   return (
     <View style={[styles.card, shadow.card]}>
-      <Link href={{ pathname: "/book/[id]", params: { id: book.id } }} asChild>
-        <Pressable accessibilityRole="button">
-          <BookCover
-            title={book.title}
-            author={book.author_name}
-            coverUrl={book.cover_url}
-            width={112}
-            height={160}
-            badge={book.genre.name}
-          />
+      <View style={styles.coverWrap}>
+        <Link href={{ pathname: "/book/[id]", params: { id: book.id } }} asChild>
+          <Pressable accessibilityRole="button">
+            <BookCover
+              title={book.title}
+              author={book.author_name}
+              coverUrl={book.cover_url}
+              width={112}
+              height={160}
+              badge={book.genre.name}
+            />
+          </Pressable>
+        </Link>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={saved ? "Remove from reading list" : "Save to reading list"}
+          onPress={() => {
+            void toggleSaved(book);
+          }}
+          style={styles.bookmark}>
+          <Icon name={saved ? "bookmark" : "bookmark_border"} size={18} color={colors.forest} filled={saved} />
         </Pressable>
-      </Link>
+      </View>
       <View style={styles.copy}>
         <Link href={{ pathname: "/book/[id]", params: { id: book.id } }} asChild>
           <Pressable style={styles.textBlock}>
@@ -68,6 +80,18 @@ const styles = StyleSheet.create({
     borderColor: colors.linen,
     flexDirection: "row",
     gap: 16,
+  },
+  coverWrap: { alignSelf: "flex-start" },
+  bookmark: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.paperElevated,
+    alignItems: "center",
+    justifyContent: "center",
   },
   copy: { flex: 1, minWidth: 0, justifyContent: "space-between" },
   textBlock: { gap: 4 },
