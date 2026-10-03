@@ -5,8 +5,10 @@ import {
   clearSession,
   currentSessionGeneration,
   hydrateSession,
+  persistProfile,
   persistSession,
   readerApi,
+  readStoredProfile,
   type Profile,
 } from "@/lib/api";
 
@@ -30,13 +32,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const started = currentSessionGeneration();
     hydrateSession()
       .then(async (tokens) => {
-        if (!tokens || !active || started !== currentSessionGeneration()) return;
+        if (!active || started !== currentSessionGeneration()) return;
+        if (!tokens) return;
+        const cached = await readStoredProfile();
+        if (!active || started !== currentSessionGeneration()) return;
+        if (cached) setUser(cached);
         try {
           const profile = await readerApi.me();
+          if (!active || started !== currentSessionGeneration()) return;
+          await persistProfile(profile);
           if (active && started === currentSessionGeneration()) setUser(profile);
         } catch (error) {
           if (error instanceof ApiError && error.status === 401 && started === currentSessionGeneration()) {
             await clearSession();
+            if (active) setUser(null);
           }
         }
       })
@@ -50,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const adopt = useCallback(async (response: { access: string; refresh: string; user: Profile }) => {
     await persistSession({ access: response.access, refresh: response.refresh });
+    await persistProfile(response.user);
     setUser(response.user);
   }, []);
 
