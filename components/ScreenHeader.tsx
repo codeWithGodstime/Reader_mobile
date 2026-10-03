@@ -20,7 +20,7 @@ type Props = {
 
 export function ScreenHeader({ variant, section, title, onSearch, onShare }: Props) {
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
+  const { user, ready, signOut } = useAuth();
   const [sheet, setSheet] = useState<"notices" | "profile" | null>(null);
 
   return (
@@ -62,22 +62,13 @@ export function ScreenHeader({ variant, section, title, onSearch, onShare }: Pro
           </View>
           <View style={styles.actions}>
             {variant === "brand" ? (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Search"
-                  onPress={onSearch}
-                  style={styles.iconButton}>
-                  <Icon name="search" size={22} color={colors.inkMuted} />
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Notifications"
-                  onPress={() => setSheet("notices")}
-                  style={styles.iconButton}>
-                  <Icon name="notifications" size={22} color={colors.inkMuted} />
-                </Pressable>
-              </>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Search"
+                onPress={onSearch}
+                style={styles.iconButton}>
+                <Icon name="search" size={22} color={colors.inkMuted} />
+              </Pressable>
             ) : (
               <Pressable
                 accessibilityRole="button"
@@ -87,9 +78,30 @@ export function ScreenHeader({ variant, section, title, onSearch, onShare }: Pro
                 <Icon name="share" size={22} color={colors.inkMuted} />
               </Pressable>
             )}
-            <Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={() => setSheet("profile")}>
-              <Image source={{ uri: AVATAR_URI }} style={styles.avatar} contentFit="cover" />
-            </Pressable>
+            {user ? (
+              <>
+                {variant === "brand" ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Notifications"
+                    onPress={() => setSheet("notices")}
+                    style={styles.iconButton}>
+                    <Icon name="notifications" size={22} color={colors.inkMuted} />
+                  </Pressable>
+                ) : null}
+                <Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={() => setSheet("profile")}>
+                  <Image source={{ uri: AVATAR_URI }} style={styles.avatar} contentFit="cover" />
+                </Pressable>
+              </>
+            ) : ready ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sign up"
+                onPress={() => router.push("/sign-in?mode=register")}
+                style={styles.signUp}>
+                <Text style={[type.labelMd, styles.signUpLabel]}>Sign up</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </View>
@@ -177,6 +189,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginLeft: 4,
   },
+  signUp: {
+    marginLeft: 4,
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: colors.forest,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  signUpLabel: { color: colors.onPrimary },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(31,36,33,0.35)",
