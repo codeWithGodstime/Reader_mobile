@@ -1,8 +1,10 @@
 import { router } from "expo-router";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AppState } from "react-native";
 
 import { useAuth } from "@/context/AuthContext";
-import { ApiError, readerApi, type BookSummary, type Cart, type FormatCode } from "@/lib/api";
+import { ApiError, currentAccessToken, readerApi, type BookSummary, type Cart, type FormatCode } from "@/lib/api";
+import { cartSocketUrl, savedSocketUrl } from "@/lib/config";
 
 type ShopContextValue = {
   cart: Cart | null;
@@ -26,6 +28,23 @@ type ShopContextValue = {
 };
 
 const ShopContext = createContext<ShopContextValue | null>(null);
+
+function isSavedUpdate(value: unknown): value is { type: "saved.updated"; saved: { books: BookSummary[]; name?: string } } {
+  if (!value || typeof value !== "object") return false;
+  const message = value as { type?: unknown; saved?: { books?: unknown } };
+  return message.type === "saved.updated" && !!message.saved && Array.isArray(message.saved.books);
+}
+
+function isCartUpdate(value: unknown): value is { type: "cart.updated"; cart: Cart } {
+  if (!value || typeof value !== "object") return false;
+  const message = value as { type?: unknown; cart?: { items?: unknown; item_count?: unknown } };
+  return (
+    message.type === "cart.updated" &&
+    !!message.cart &&
+    Array.isArray(message.cart.items) &&
+    typeof message.cart.item_count === "number"
+  );
+}
 
 export function ShopProvider({ children }: { children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -78,6 +97,86 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       });
     return () => {
       active = false;
+    };
+  }, [ready, user]);
+
+  useEffect(() => {
+    if (!ready || !user) return;
+    let stopped = false;
+    let socket: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+
+    const clearRetry = () => {
+      if (!retryTimer) return;
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+
+    const schedule = () => {
+      if (stopped || attempt >= 8) return;
+      clearRetry();
+      const delay = Math.min(1000 * 2 ** attempt, 15000);
+      attempt += 1;
+      retryTimer = setTimeout(connect, delay);
+    };
+
+    const connect = () => {
+      if (stopped) return;
+      const token = currentAccessToken();
+      if (!token) {
+        schedule();
+        return;
+      }
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+      const next = new WebSocket(cartSocketUrl(token));
+      socket = next;
+      next.onopen = () => {
+        attempt = 0;
+      };
+      next.onmessage = (event) => {
+        if (typeof event.data !== "string") return;
+        try {
+          const parsed: unknown = JSON.parse(event.data);
+          if (isCartUpdate(parsed)) setCart(parsed.cart);
+        } catch {
+          // Ignore frames that are not a cart snapshot.
+        }
+      };
+      next.onclose = (event) => {
+        if (socket === next) socket = null;
+        if (stopped) return;
+        if (event.code === 4401) {
+          void readerApi
+            .cart()
+            .then((cart) => {
+              if (!stopped) setCart(cart);
+            })
+            .catch(() => undefined)
+            .finally(schedule);
+          return;
+        }
+        schedule();
+      };
+    };
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || stopped) return;
+      attempt = 0;
+      clearRetry();
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+      connect();
+    });
+    connect();
+
+    return () => {
+      stopped = true;
+      clearRetry();
+      subscription.remove();
+      if (!socket) return;
+      socket.onclose = null;
+      socket.close();
+      socket = null;
     };
   }, [ready, user]);
 
@@ -168,6 +267,24 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     [writeSaved],
   );
 
+  const applyRemoteSaved = useCallback(
+    (serverBooks: BookSummary[]) => {
+      const books = serverBooks.map((item) => ({ ...item, saved: true as const }));
+      const pending = pendingSavedRef.current;
+      const known: Record<string, boolean> = {};
+      for (const item of books) known[item.id] = true;
+      for (const [id, saved] of pending) known[id] = saved;
+      const extras = savedBooksRef.current.filter(
+        (item) => pending.get(item.id) === true && !books.some((book) => book.id === item.id),
+      );
+      const ordered = books.filter((item) => known[item.id] !== false);
+      writeSaved([...extras.map((item) => ({ ...item, saved: true })), ...ordered], known, true);
+      setSavedError("");
+      setSavedStatus("ready");
+    },
+    [writeSaved],
+  );
+
   const loadShelfBooks = useCallback(async () => {
     const shelves = await readerApi.shelves();
     const shelf = shelves.find((item) => item.is_default) ?? shelves[0];
@@ -240,6 +357,85 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, [ready, user, loadShelfBooks, applyServerShelf, writeSaved]);
+
+  useEffect(() => {
+    if (!ready || !user) return;
+    let stopped = false;
+    let socket: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+
+    const clearRetry = () => {
+      if (!retryTimer) return;
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+
+    const schedule = () => {
+      if (stopped || attempt >= 8) return;
+      clearRetry();
+      const delay = Math.min(1000 * 2 ** attempt, 15000);
+      attempt += 1;
+      retryTimer = setTimeout(connect, delay);
+    };
+
+    const connect = () => {
+      if (stopped) return;
+      const token = currentAccessToken();
+      if (!token) {
+        schedule();
+        return;
+      }
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+      const next = new WebSocket(savedSocketUrl(token));
+      socket = next;
+      next.onopen = () => {
+        attempt = 0;
+      };
+      next.onmessage = (event) => {
+        if (typeof event.data !== "string") return;
+        try {
+          const parsed: unknown = JSON.parse(event.data);
+          if (isSavedUpdate(parsed)) applyRemoteSaved(parsed.saved.books);
+        } catch {
+          // Ignore frames that are not a saved-items snapshot.
+        }
+      };
+      next.onclose = (event) => {
+        if (socket === next) socket = null;
+        if (stopped) return;
+        if (event.code === 4401) {
+          void loadShelfBooks()
+            .then((books) => {
+              if (!stopped) applyServerShelf(books);
+            })
+            .catch(() => undefined)
+            .finally(schedule);
+          return;
+        }
+        schedule();
+      };
+    };
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || stopped) return;
+      attempt = 0;
+      clearRetry();
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+      connect();
+    });
+    connect();
+
+    return () => {
+      stopped = true;
+      clearRetry();
+      subscription.remove();
+      if (!socket) return;
+      socket.onclose = null;
+      socket.close();
+      socket = null;
+    };
+  }, [ready, user, applyRemoteSaved, loadShelfBooks]);
 
   const isSaved = useCallback(
     (bookId: string, fallback = false) => {
