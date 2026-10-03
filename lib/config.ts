@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 type ExtraConfig = {
   apiBaseUrl?: string;
@@ -29,8 +30,42 @@ function requireApiBaseUrl() {
   throw new Error("EXPO_PUBLIC_API_BASE_URL is required for a release build.");
 }
 
+/**
+ * Django listens on 127.0.0.1:8001. That host is the emulator itself on Android,
+ * so loopback is rewritten to the emulator alias 10.0.2.2. iOS simulator and web
+ * keep the documented URL.
+ */
+function reachableDevBaseUrl(configured: string) {
+  if (typeof __DEV__ === "undefined" || !__DEV__ || Platform.OS !== "android") return configured;
+  try {
+    const url = new URL(configured);
+    if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") return configured;
+    url.hostname = "10.0.2.2";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return configured;
+  }
+}
+
 /** Contract base URL comes from EXPO_PUBLIC_API_BASE_URL. Dev may fall back to localhost. */
-export const API_BASE_URL = requireApiBaseUrl();
+export const API_BASE_URL = reachableDevBaseUrl(requireApiBaseUrl());
+
+const NGROK_HOST_SUFFIXES = [".ngrok-free.app", ".ngrok-free.dev", ".ngrok.io", ".ngrok.app", ".ngrok.dev"];
+
+function isNgrokHost(hostname: string) {
+  const host = hostname.toLowerCase();
+  return NGROK_HOST_SUFFIXES.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix));
+}
+
+/** Free ngrok serves an HTML interstitial unless API calls send this header. */
+export function ngrokHeaders(): Record<string, string> {
+  try {
+    if (!isNgrokHost(new URL(API_BASE_URL).hostname)) return {};
+  } catch {
+    return {};
+  }
+  return { "ngrok-skip-browser-warning": "true" };
+}
 
 export const googleConfig = {
   clientId: firstNonEmpty(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID, extra().googleClientId),
