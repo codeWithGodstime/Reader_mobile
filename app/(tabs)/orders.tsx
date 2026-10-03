@@ -1,11 +1,13 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { BookCover } from "@/components/BookCover";
+import { FormScroll, keyboardAvoidingBehavior } from "@/components/FormScroll";
 import { Icon, type IconName } from "@/components/Icon";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { LoadingShelf, ShelfState } from "@/components/ShelfState";
+import { OrderListSkeleton } from "@/components/Skeleton";
+import { ShelfState } from "@/components/ShelfState";
 import { PillButton } from "@/components/ui";
 import { BRAND } from "@/constants/brand";
 import { colors, radius, space, type } from "@/constants/theme";
@@ -91,7 +93,7 @@ export default function OrdersScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader variant="brand" section="Orders" onSearch={() => setSearching(true)} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <FormScroll contentContainerStyle={styles.content}>
         <Text style={[type.labelSm, styles.kicker]}>Account Shelves</Text>
         <Text style={[type.headlineMd, { color: colors.forest }]}>Your Orders</Text>
         {!user && ready ? (
@@ -112,7 +114,7 @@ export default function OrdersScreen() {
             <TabButton label="Past Orders" count={counts.past} active={tab === "past"} onPress={() => setTab("past")} />
           </View>
         ) : null}
-        {user && status === "loading" ? <LoadingShelf /> : null}
+        {user && status === "loading" ? <OrderListSkeleton /> : null}
         {user && status === "error" ? <ShelfState icon="receipt_long" tone="error" title="Orders didn’t load" body={error} /> : null}
         {user && status === "ready" && orders.length === 0 ? (
           <ShelfState
@@ -221,7 +223,7 @@ export default function OrdersScreen() {
         </View>
         <Text style={[type.quote, styles.quote]}>“A book is a garden, an orchard, a storehouse, a party, a company by the way.”</Text>
         <Text style={[type.bodySm, styles.signoff]}>{BRAND} • Books for every shelf</Text>
-      </ScrollView>
+      </FormScroll>
 
       <Sheet visible={tracking !== null} title="Live Parcel Tracking" onClose={() => setTracking(null)}>
         {tracking ? (
@@ -366,17 +368,21 @@ function Progress({ status }: { status: OrderStatus }) {
 function Sheet({ visible, title, onClose, children }: { visible: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => undefined}>
-          <View style={styles.rowBetween}>
-            <Text style={[type.headlineSm, styles.flex, { color: colors.ink }]}>{title}</Text>
-            <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.close}>
-              <Icon name="close" size={18} color={colors.ink} />
-            </Pressable>
-          </View>
-          {children}
+      <KeyboardAvoidingView behavior={keyboardAvoidingBehavior()} style={styles.backdrop}>
+        <Pressable style={styles.backdropTap} onPress={onClose}>
+          <Pressable style={styles.sheet} onPress={() => undefined}>
+            <View style={styles.rowBetween}>
+              <Text style={[type.headlineSm, styles.flex, { color: colors.ink }]}>{title}</Text>
+              <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.close}>
+                <Icon name="close" size={18} color={colors.ink} />
+              </Pressable>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" bounces={false} style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
+              {children}
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -408,7 +414,10 @@ const styles = StyleSheet.create({
   quote: { color: colors.ink, marginTop: 12 },
   signoff: { color: colors.inkMuted, textAlign: "center" },
   backdrop: { flex: 1, backgroundColor: "rgba(31,36,33,0.35)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: colors.paperElevated, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 32, gap: 12, maxHeight: "85%" },
+  backdropTap: { flex: 1, justifyContent: "flex-end" },
+  sheet: { backgroundColor: colors.paperElevated, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 32, gap: 12, maxHeight: "100%" },
+  sheetScroll: { flexGrow: 0, flexShrink: 1 },
+  sheetBody: { gap: 12 },
   close: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.paperSurface, alignItems: "center", justifyContent: "center" },
   event: { flexDirection: "row", gap: 10 },
   review: { minHeight: 100, borderRadius: radius.md, borderWidth: 1, borderColor: colors.linen, backgroundColor: colors.paperSurface, padding: 12, ...type.bodyMd, color: colors.ink, textAlignVertical: "top" },

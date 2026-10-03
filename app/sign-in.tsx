@@ -1,13 +1,13 @@
 import * as Google from "expo-auth-session/providers/google";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Icon } from "@/components/Icon";
+import { FormScroll } from "@/components/FormScroll";
 import { Field, PillButton } from "@/components/ui";
-import { colors, radius, type } from "@/constants/theme";
+import { colors, type } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
 import { googleConfig, googleSignInConfigured } from "@/lib/config";
@@ -16,14 +16,19 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
-  const { signIn, register, signInWithGoogleIdToken } = useAuth();
-  const [mode, setMode] = useState<"sign-in" | "register">("sign-in");
+  const { user, signIn, register, signInWithGoogleIdToken } = useAuth();
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const [mode, setMode] = useState<"sign-in" | "register">(params.mode === "register" ? "register" : "sign-in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (user) router.replace("/");
+  }, [user]);
 
   const submit = async () => {
     setError("");
@@ -32,14 +37,12 @@ export default function SignInScreen() {
     try {
       if (mode === "register") await register(name.trim(), email.trim(), password);
       else await signIn(email.trim(), password);
-      if (router.canGoBack()) router.back();
-      else router.replace("/");
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
         setFieldErrors(Object.fromEntries(err.details.map((detail) => [detail.field, detail.message])));
       } else {
-        setError("The shop could not sign you in.");
+        setError(err instanceof Error && err.message ? err.message : "The shop could not sign you in.");
       }
     } finally {
       setBusy(false);
@@ -51,8 +54,6 @@ export default function SignInScreen() {
     setBusy(true);
     try {
       await signInWithGoogleIdToken(idToken);
-      if (router.canGoBack()) router.back();
-      else router.replace("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Google sign-in could not be completed.");
     } finally {
@@ -61,13 +62,9 @@ export default function SignInScreen() {
   };
 
   return (
-    <ScrollView
+    <FormScroll
       style={styles.screen}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}
-      keyboardShouldPersistTaps="handled">
-      <Pressable accessibilityLabel="Close" onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} style={styles.close}>
-        <Icon name="close" size={18} color={colors.ink} />
-      </Pressable>
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + 28, paddingBottom: insets.bottom + 24 }]}>
       <Text style={[type.labelSm, styles.kicker]}>Reader</Text>
       <Text style={[type.headlineXl, { color: colors.ink }]}>{mode === "register" ? "Open a shelf" : "Welcome back"}</Text>
       <Text style={[type.bodyLg, styles.lede]}>
@@ -81,7 +78,10 @@ export default function SignInScreen() {
         label="Email"
         placeholder="you@example.com"
         autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="email"
         keyboardType="email-address"
+        textContentType="emailAddress"
         value={email}
         onChangeText={setEmail}
         error={fieldErrors.email}
@@ -89,7 +89,11 @@ export default function SignInScreen() {
       <Field
         label="Password"
         placeholder="At least 8 characters"
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete={mode === "register" ? "password-new" : "password"}
         secureTextEntry
+        textContentType={mode === "register" ? "newPassword" : "password"}
         value={password}
         onChangeText={setPassword}
         error={fieldErrors.password}
@@ -111,7 +115,7 @@ export default function SignInScreen() {
           {mode === "register" ? "Already have a shelf? Sign in" : "New here? Create an account"}
         </Text>
       </Pressable>
-    </ScrollView>
+    </FormScroll>
   );
 }
 
@@ -179,14 +183,6 @@ function GooglePrompt({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paperBase },
   content: { paddingHorizontal: 20, gap: 14 },
-  close: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    backgroundColor: colors.paperSurface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   kicker: { color: colors.inkMuted, textTransform: "uppercase" },
   lede: { color: colors.inkMuted },
   actions: { flexDirection: "row", gap: 8, alignItems: "flex-start" },

@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { BookCard } from "@/components/BookCard";
+import { FormScroll } from "@/components/FormScroll";
 import { FilterSheet, formatChipLabel, priceChipLabel } from "@/components/FilterSheet";
 import { Icon } from "@/components/Icon";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { LoadingShelf, ShelfState } from "@/components/ShelfState";
+import { BookListSkeleton } from "@/components/Skeleton";
+import { ShelfState } from "@/components/ShelfState";
 import { colors, radius, space, type } from "@/constants/theme";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError, readerApi, type BookSummary, type FormatCode, type Genre, type PriceFilter, type SortKey } from "@/lib/api";
@@ -89,7 +91,7 @@ export default function ShopScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader variant="brand" section="Shop" onSearch={() => searchRef.current?.focus()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScroll contentContainerStyle={styles.content}>
         <View style={styles.eyebrow}>
           <Text style={[type.labelSm, styles.eyebrowText]}>Curated Catalog</Text>
           <View style={styles.stock}>
@@ -190,7 +192,7 @@ export default function ShopScreen() {
           </Pressable>
         </View>
 
-        {status === "loading" ? <LoadingShelf /> : null}
+        {status === "loading" ? <BookListSkeleton /> : null}
         {status === "error" ? (
           <ShelfState icon="menu_book" tone="error" title="The shelf didn’t open" body={error} action="Try again" onAction={() => setReloadKey((current) => current + 1)} />
         ) : null}
@@ -237,7 +239,7 @@ export default function ShopScreen() {
           <Icon name="menu_book" size={18} color={colors.forest} />
           <Text style={[type.bodySm, { color: colors.inkMuted }]}>Reader — books, delivered</Text>
         </View>
-      </ScrollView>
+      </FormScroll>
 
       <FilterSheet
         visible={filtersOpen}
