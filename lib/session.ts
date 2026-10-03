@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 
 const ACCESS = "reader.access";
 const REFRESH = "reader.refresh";
+const PROFILE = "reader.profile";
 
 export type Tokens = { access: string; refresh: string };
 
@@ -21,6 +22,18 @@ export async function writeTokens(tokens: Tokens) {
 export async function deleteTokens() {
   await remove(ACCESS);
   await remove(REFRESH);
+}
+
+export async function readProfileJson() {
+  return read(PROFILE);
+}
+
+export async function writeProfileJson(value: string) {
+  await write(PROFILE, value);
+}
+
+export async function deleteProfileJson() {
+  await remove(PROFILE);
 }
 
 async function read(key: string) {
