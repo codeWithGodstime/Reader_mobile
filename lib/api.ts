@@ -1,5 +1,5 @@
 import { API_BASE_URL, ngrokHeaders } from "@/lib/config";
-import { deleteTokens, readTokens, writeTokens, type Tokens } from "@/lib/session";
+import { deleteProfileJson, deleteTokens, readProfileJson, readTokens, writeProfileJson, writeTokens, type Tokens } from "@/lib/session";
 
 export type FormatCode = "paperback" | "hardcover" | "ebook" | "signed";
 export type PriceFilter = "any" | "under_16" | "from_16_to_18" | "over_18";
@@ -285,6 +285,23 @@ export async function clearSession() {
   sessionGeneration += 1;
   tokens = null;
   await deleteTokens();
+  await deleteProfileJson();
+}
+
+export async function readStoredProfile(): Promise<Profile | null> {
+  const raw = await readProfileJson();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Profile;
+    if (!parsed || typeof parsed.id !== "string" || typeof parsed.name !== "string") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function persistProfile(profile: Profile) {
+  await writeProfileJson(JSON.stringify(profile));
 }
 
 function query(params: Record<string, string | number | boolean | undefined | null>) {
