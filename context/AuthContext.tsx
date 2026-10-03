@@ -1,6 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { ApiError, clearSession, hydrateSession, persistSession, readerApi, type Profile } from "@/lib/api";
+import {
+  ApiError,
+  clearSession,
+  currentSessionGeneration,
+  hydrateSession,
+  persistSession,
+  readerApi,
+  type Profile,
+} from "@/lib/api";
 
 type AuthContextValue = {
   user: Profile | null;
@@ -19,14 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    const started = currentSessionGeneration();
     hydrateSession()
       .then(async (tokens) => {
-        if (!tokens || !active) return;
+        if (!tokens || !active || started !== currentSessionGeneration()) return;
         try {
           const profile = await readerApi.me();
-          if (active) setUser(profile);
+          if (active && started === currentSessionGeneration()) setUser(profile);
         } catch (error) {
-          if (error instanceof ApiError && error.status === 401) {
+          if (error instanceof ApiError && error.status === 401 && started === currentSessionGeneration()) {
             await clearSession();
           }
         }

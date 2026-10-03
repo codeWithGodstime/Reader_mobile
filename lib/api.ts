@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "@/lib/config";
+import { API_BASE_URL, ngrokHeaders } from "@/lib/config";
 import { deleteTokens, readTokens, writeTokens, type Tokens } from "@/lib/session";
 
 export type FormatCode = "paperback" | "hardcover" | "ebook" | "signed";
@@ -257,22 +257,32 @@ export class ApiError extends Error {
 
 let tokens: Tokens | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
+let sessionGeneration = 0;
+
+export function currentSessionGeneration() {
+  return sessionGeneration;
+}
 
 export function currentAccessToken() {
   return tokens?.access ?? null;
 }
 
 export async function hydrateSession() {
-  tokens = await readTokens();
+  const started = sessionGeneration;
+  const stored = await readTokens();
+  if (started !== sessionGeneration) return tokens;
+  tokens = stored;
   return tokens;
 }
 
 export async function persistSession(next: Tokens) {
+  sessionGeneration += 1;
   tokens = next;
   await writeTokens(next);
 }
 
 export async function clearSession() {
+  sessionGeneration += 1;
   tokens = null;
   await deleteTokens();
 }
@@ -307,21 +317,29 @@ async function refreshSession() {
   if (!tokens?.refresh) return false;
   if (!refreshInFlight) {
     const refresh = tokens.refresh;
+    const started = sessionGeneration;
     refreshInFlight = (async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
           method: "POST",
-          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            ...ngrokHeaders(),
+          },
           body: JSON.stringify({ refresh }),
         });
+        if (started !== sessionGeneration) return true;
         if (!response.ok) {
           await clearSession();
           return false;
         }
         const pair = (await response.json()) as Tokens;
+        if (started !== sessionGeneration) return true;
         await persistSession(pair);
         return true;
       } catch {
+        if (started !== sessionGeneration) return true;
         await clearSession();
         return false;
       } finally {
@@ -336,7 +354,7 @@ export async function api<T>(
   path: string,
   options: { method?: string; body?: unknown; auth?: boolean; retry?: boolean } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", ...ngrokHeaders() };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (options.auth !== false && tokens?.access) headers.Authorization = `Bearer ${tokens.access}`;
 
