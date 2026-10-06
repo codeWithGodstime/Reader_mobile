@@ -11,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.reader.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -39,6 +40,17 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "",
+      "googleClientId": "",
+      "googleWebClientId": "",
+      "googleIosClientId": "",
+      "googleAndroidClientId": "",
+      "router": {},
+      "eas": {
+        "projectId": "d8b27e72-b05c-4f4d-95fc-d3a3c59abaea"
+      }
     }
   }
 }
